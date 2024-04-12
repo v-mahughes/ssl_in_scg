@@ -7,8 +7,9 @@ import numpy as np
 import pandas as pd
 import lightning.pytorch as pl
 import torch
+import anndata as ad
 
-from self_supervision.data.datamodules import MerlinDataModule
+from self_supervision.data.datamodules import MerlinDataModule, AdataPretraining
 from self_supervision.models.lightning_modules.cellnet_autoencoder import (
     MLPAutoEncoder,
     MLPClassifier,
@@ -21,7 +22,7 @@ from self_supervision.models.lightning_modules.cellnet_autoencoder import (
 
 
 class EstimatorAutoEncoder:
-    datamodule: MerlinDataModule
+    datamodule: AdataPretraining
     model: pl.LightningModule
     trainer: pl.Trainer
 
@@ -39,16 +40,14 @@ class EstimatorAutoEncoder:
         merlin_dataset_kwargs_train: Dict = None,
         merlin_dataset_kwargs_inference: Dict = None,
     ):
-        self.datamodule = MerlinDataModule(
-            self.data_path,
+        self.datamodule = AdataPretraining(self.data_path,
             columns=["cell_type", "dataset_id"],
             batch_size=batch_size,
             sub_sample_frac=sub_sample_frac,
             dataloader_kwargs_train=dataloader_kwargs_train,
             dataloader_kwargs_inference=dataloader_kwargs_inference,
             dataset_kwargs_train=merlin_dataset_kwargs_train,
-            dataset_kwargs_inference=merlin_dataset_kwargs_inference,
-        )
+            dataset_kwargs_inference=merlin_dataset_kwargs_inference,)
 
     def init_model(self, model_type: str, model_kwargs):
         if model_type == "mlp_ae":
@@ -99,17 +98,17 @@ class EstimatorAutoEncoder:
         if self.hvg:
             return {
                 "gene_dim": self.num_hvgs,
-                "train_set_size": sum(self.datamodule.train_dataset.partition_lens),
-                "val_set_size": sum(self.datamodule.val_dataset.partition_lens),
+                "train_set_size": self.datamodule.train_dataset.size(dim=0),
+                "val_set_size": self.datamodule.val_dataset.size(dim=0),
                 "batch_size": self.datamodule.batch_size,
                 "hvg": self.hvg,
                 "num_hvgs": self.num_hvgs,
             }
         else:
             return {
-                "gene_dim": len(pd.read_parquet(join(self.data_path, "var.parquet"))),
-                "train_set_size": sum(self.datamodule.train_dataset.partition_lens),
-                "val_set_size": sum(self.datamodule.val_dataset.partition_lens),
+                "gene_dim": int(ad.read_h5ad(self.data_path, back='r').n_vars),
+                "train_set_size": self.datamodule.train_dataset.size(dim=0),
+                "val_set_size": self.datamodule.val_dataset.size(dim=0),
                 "batch_size": self.datamodule.batch_size,
                 "hvg": self.hvg,
                 "num_hvgs": self.num_hvgs,

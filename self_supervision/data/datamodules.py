@@ -12,6 +12,8 @@ from torch.utils.data import Dataset, DataLoader
 import h5py
 import torch
 import numpy as np
+import scanpy as sc
+import anndata as ad
 
 PARQUET_SCHEMA = {
     "X": float32,
@@ -200,6 +202,60 @@ class AdataDataset(Dataset):
         batch = {"X": self.genes[idx], "perturbations": self.perturbations[idx]}
         return batch
 
+class AdataPretraining(Dataset):
+    def __init__(self,
+        path: str,
+        columns: List[str],
+        batch_size: int,
+        sub_sample_frac: float = 1.0,
+        dataloader_kwargs_train: Dict = None,
+        dataloader_kwargs_inference: Dict = None,
+        dataset_kwargs_train: Dict = None,
+        dataset_kwargs_inference: Dict = None,
+        dataset_id_filter=None,):
+
+        self.path = path
+        self.batch_size = batch_size
+        self.sub_sample_frac = sub_sample_frac
+
+        self.dataloader_kwargs_train = _set_default_kwargs_dataloader(
+            dataloader_kwargs_train, train=True
+        )
+        self.dataloader_kwargs_inference = _set_default_kwargs_dataloader(
+            dataloader_kwargs_inference, train=False
+        )
+        self.dataset_id_filter = dataset_id_filter
+
+        train_data = ad.read_h5ad(self.path+'/train.h5ad', backed='r')
+        print('train n obs', train_data.n_obs)
+        val_data = ad.read_h5ad(self.path+'/val.h5ad', backed='r')
+        print('val n obs', val_data.n_obs)
+        test_data = ad.read_h5ad(self.path+'/test.h5ad', backed='r')
+        print('test n obs', test_data.n_obs)
+
+        self.train_dataset = torch.tensor(train_data.X, dtype=torch.float32)
+        self.val_dataset = torch.tensor(val_data.X, dtype=torch.float32)
+        self.test_dataset = torch.tensor(test_data.X, dtype=torch.float32)
+        
+    def train_dataloader(self):
+        return DataLoader(
+        self.train_dataset, batch_size=self.batch_size, shuffle=True
+    )
+
+    def val_dataloader(self):
+        return DataLoader(
+        self.val_dataset, batch_size=self.batch_size, shuffle=True
+    )
+
+    def test_dataloader(self):
+        return DataLoader(
+        self.test_dataset, batch_size=self.batch_size, shuffle=True
+    )
+
+    def predict_dataloader(self):
+        return DataLoader(
+        self.test_dataset, batch_size=self.batch_size, shuffle=True
+    )
 
 class HDF5Dataset(Dataset):
     """Custom Dataset for loading data from HDF5 files separately."""

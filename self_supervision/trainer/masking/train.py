@@ -5,7 +5,7 @@ from lightning.pytorch.callbacks import (
     TQDMProgressBar,
     LearningRateMonitor,
 )
-from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 import os
 import pickle
 import numpy as np
@@ -97,6 +97,12 @@ def parse_args():
         default="/lustre/groups/ml01/workspace/till.richter/",
         type=str,
         help="Path where the lightning checkpoints are stored",
+    )
+    parser.add_argument(
+        "--wandb_job_name",
+        default="ssl",
+        type=str,
+        help="Name of job on wandb",
     )
     return parser.parse_args()
 
@@ -191,7 +197,7 @@ def train():
             "devices": 1,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
-            "logger": [TensorBoardLogger(CHECKPOINT_PATH, name="default")],
+            "logger": [WandbLogger(project="scSFM", save_dir=CHECKPOINT_PATH, name=args.wandb_job_name)],
             "log_every_n_steps": 100,
             "detect_anomaly": False,
             "enable_progress_bar": True,
