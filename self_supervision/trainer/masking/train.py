@@ -23,7 +23,6 @@ from self_supervision.trainer.masking.mask_utils import (
 )
 from self_supervision.estimator.cellnet import EstimatorAutoEncoder
 
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--decoder", action="store_true", help="Whether to use decoder")
@@ -189,12 +188,13 @@ def train():
 
     estim.init_trainer(
         trainer_kwargs={
-            "max_epochs": 1000,
+            "strategy": "ddp",
+            "max_epochs": 10,
             "gradient_clip_val": 1.0,
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
             "accelerator": "gpu",
-            "devices": 1,
+            "devices": 4,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
             "logger": [WandbLogger(project="scSFM", save_dir=CHECKPOINT_PATH, name=args.wandb_job_name)],

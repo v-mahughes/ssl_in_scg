@@ -15,9 +15,7 @@ from self_supervision.models.lightning_modules.cellnet_autoencoder import (
     MLPClassifier,
     MLPBYOL,
     MLPBarlowTwins,
-    VAE,
-    MLPNegBin,
-    VAENegBin,
+    MLPNegBin
 )
 
 
@@ -106,9 +104,7 @@ class EstimatorAutoEncoder:
             }
         else:
             return {
-                "gene_dim": int(ad.read_h5ad(self.data_path, back='r').n_vars),
-                "train_set_size": self.datamodule.train_dataset.size(dim=0),
-                "val_set_size": self.datamodule.val_dataset.size(dim=0),
+                "gene_dim": int(self.datamodule.train_dataset.nvars),
                 "batch_size": self.datamodule.batch_size,
                 "hvg": self.hvg,
                 "num_hvgs": self.num_hvgs,

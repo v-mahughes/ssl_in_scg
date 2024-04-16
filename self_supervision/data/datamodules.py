@@ -202,7 +202,7 @@ class AdataDataset(Dataset):
         batch = {"X": self.genes[idx], "perturbations": self.perturbations[idx]}
         return batch
 
-class AdataPretraining(Dataset):
+class AdataPretraining(pl.LightningDataModule):
     def __init__(self,
         path: str,
         columns: List[str],
@@ -226,36 +226,58 @@ class AdataPretraining(Dataset):
         )
         self.dataset_id_filter = dataset_id_filter
 
-        train_data = ad.read_h5ad(self.path+'/train.h5ad', backed='r')
-        print('train n obs', train_data.n_obs)
-        val_data = ad.read_h5ad(self.path+'/val.h5ad', backed='r')
-        print('val n obs', val_data.n_obs)
-        test_data = ad.read_h5ad(self.path+'/test.h5ad', backed='r')
-        print('test n obs', test_data.n_obs)
+        # train_data = ad.read_h5ad(self.path+'/train.h5ad', backed='r')
+        # print('train n obs', train_data.n_obs)
+        # val_data = ad.read_h5ad(self.path+'/val.h5ad', backed='r')
+        # print('val n obs', val_data.n_obs)
+        # test_data = ad.read_h5ad(self.path+'/test.h5ad', backed='r')
+        # print('test n obs', test_data.n_obs)
 
-        self.train_dataset = torch.tensor(train_data.X, dtype=torch.float32)
-        self.val_dataset = torch.tensor(val_data.X, dtype=torch.float32)
-        self.test_dataset = torch.tensor(test_data.X, dtype=torch.float32)
+        # self.train_dataset = torch.tensor(np.array(train_data.X), dtype=torch.float32)
+        # self.val_dataset = torch.tensor(np.array(val_data.X), dtype=torch.float32)
+        # self.test_dataset = torch.tensor(np.array(test_data.X), dtype=torch.float32)
+
+        self.train_dataset = AnnDataDataset(self.path+'_train.h5ad')
+        self.val_dataset = AnnDataDataset(self.path+'_val.h5ad')
+        self.test_dataset = AnnDataDataset(self.path+'_test.h5ad')
         
     def train_dataloader(self):
         return DataLoader(
-        self.train_dataset, batch_size=self.batch_size, shuffle=True
+        self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=31
     )
 
     def val_dataloader(self):
         return DataLoader(
-        self.val_dataset, batch_size=self.batch_size, shuffle=True
+        self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=31
     )
 
     def test_dataloader(self):
         return DataLoader(
-        self.test_dataset, batch_size=self.batch_size, shuffle=True
+        self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=31
     )
 
     def predict_dataloader(self):
         return DataLoader(
         self.test_dataset, batch_size=self.batch_size, shuffle=True
     )
+
+#Def __getitems__(self, indices):
+    #Return atadat[indices, :]
+
+class AnnDataDataset(Dataset):
+    def __init__(self, adata_path):
+        self.adata = ad.read_h5ad(adata_path, backed='r')
+        self.nvars = self.adata.n_vars
+
+    def __getitem__(self, idx):
+        #might have to copy to memory
+        return torch.tensor(self.adata[idx, :].to_memory().X, dtype=torch.float32)
+
+    # def __getitems__(self, indices):
+    #     return torch.tensor(self.adata[indices, :].to_memory().X, dtype=torch.float32)
+    
+    def __len__(self):
+        return self.adata.n_obs
 
 class HDF5Dataset(Dataset):
     """Custom Dataset for loading data from HDF5 files separately."""

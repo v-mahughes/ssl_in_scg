@@ -15,7 +15,7 @@
 # else
 #     source "$HOME/.bashrc"
 # fi
-SSL_PROJECT_HOME=/home/v-mahughes/ssl_in_scg
+SSL_PROJECT_HOME=/home/v-mahughes/sc-SFM/ssl_in_scg
 cd $SSL_PROJECT_HOME/self_supervision/trainer/masking
 
-python -u train.py --mask_rate 0.5 --model 'MLP' --dropout 0.1 --weight_decay 0.01 --lr 0.001 --data_path /home/v-mahughes/data/pbmc3k.h5ad --model_path /home/v-mahughes/ssl_in_scg/saved_model/ --decoder 
+python -u train.py --mask_rate 0.5 --model 'MLP' --dropout 0.1 --weight_decay 0.01 --lr 0.001 --data_path /home/v-mahughes/data/data_test/hi --model_path /home/v-mahughes/sc-SFM-saved-models/ssl/tests --wandb_job_name 'test' --batch_size 500 --decoder 
