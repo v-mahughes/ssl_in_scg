@@ -18,4 +18,4 @@
 SSL_PROJECT_HOME=/home/v-mahughes/sc-SFM/ssl_in_scg
 cd $SSL_PROJECT_HOME/self_supervision/trainer/masking
 
-python -u train.py --mask_rate 0.5 --model 'MLP' --dropout 0.1 --weight_decay 0.01 --lr 0.001 --data_path /home/v-mahughes/data/data_test/hi --model_path /home/v-mahughes/sc-SFM-saved-models/ssl/tests --wandb_job_name 'test' --batch_size 500 --decoder 
+python -u train.py --mask_rate 0.5 --model 'MLP' --dropout 0.1 --weight_decay 0.01 --lr 0.001 --data_path /home/v-mahughes/data/data_test/hi --model_path /home/v-mahughes/sc-SFM-saved-models/ssl/tests --wandb_job_name 'test' --version 0 --decoder 

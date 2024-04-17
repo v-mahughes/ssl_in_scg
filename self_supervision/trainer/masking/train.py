@@ -189,7 +189,7 @@ def train():
     estim.init_trainer(
         trainer_kwargs={
             "strategy": "ddp",
-            "max_epochs": 10,
+            "max_epochs": 1000,
             "gradient_clip_val": 1.0,
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
@@ -197,7 +197,7 @@ def train():
             "devices": 4,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
-            "logger": [WandbLogger(project="scSFM", save_dir=CHECKPOINT_PATH, name=args.wandb_job_name)],
+            "logger": [WandbLogger(project="scSFM", save_dir=CHECKPOINT_PATH, name=args.wandb_job_name, version='version_'+str(args.version))],
             "log_every_n_steps": 100,
             "detect_anomaly": False,
             "enable_progress_bar": True,
