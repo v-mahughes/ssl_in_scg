@@ -205,6 +205,7 @@ class AdataDataset(Dataset):
 class AdataPretraining(pl.LightningDataModule):
     def __init__(self,
         path: str,
+        frac_seed_label: str,
         columns: List[str],
         batch_size: int,
         sub_sample_frac: float = 1.0,
@@ -237,9 +238,9 @@ class AdataPretraining(pl.LightningDataModule):
         # self.val_dataset = torch.tensor(np.array(val_data.X), dtype=torch.float32)
         # self.test_dataset = torch.tensor(np.array(test_data.X), dtype=torch.float32)
 
-        self.train_dataset = AnnDataDataset(self.path+'_train.h5ad')
-        self.val_dataset = AnnDataDataset(self.path+'_val.h5ad')
-        self.test_dataset = AnnDataDataset(self.path+'_test.h5ad')
+        self.train_dataset = AnnDataDataset(self.path+'/train/'+frac_seed_label+'/'+frac_seed_label+'_TRAIN.h5ad')
+        self.val_dataset = AnnDataDataset(self.path+'/val/'+frac_seed_label+'/'+frac_seed_label+'_VAL.h5ad')
+        self.test_dataset = AnnDataDataset(self.path+'/test/'+frac_seed_label+'/'+frac_seed_label+'_TEST.h5ad')
         
     def train_dataloader(self):
         return DataLoader(

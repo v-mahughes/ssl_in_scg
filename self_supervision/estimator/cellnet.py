@@ -24,8 +24,9 @@ class EstimatorAutoEncoder:
     model: pl.LightningModule
     trainer: pl.Trainer
 
-    def __init__(self, data_path: str, hvg: bool = False, num_hvgs: int = 2000):
+    def __init__(self, data_path: str, frac_seed_label: str, hvg: bool = False, num_hvgs: int = 2000):
         self.data_path = data_path
+        self.frac_seed_label = frac_seed_label
         self.hvg = hvg
         self.num_hvgs = num_hvgs
 
@@ -39,6 +40,7 @@ class EstimatorAutoEncoder:
         merlin_dataset_kwargs_inference: Dict = None,
     ):
         self.datamodule = AdataPretraining(self.data_path,
+            frac_seed_label=self.frac_seed_label,
             columns=["cell_type", "dataset_id"],
             batch_size=batch_size,
             sub_sample_frac=sub_sample_frac,

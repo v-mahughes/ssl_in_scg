@@ -22,6 +22,7 @@ from self_supervision.trainer.masking.mask_utils import (
     read_gmt,
 )
 from self_supervision.estimator.cellnet import EstimatorAutoEncoder
+import torch.distributed as dist
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -103,6 +104,12 @@ def parse_args():
         type=str,
         help="Name of job on wandb",
     )
+    parser.add_argument(
+    "--frac_seed_label",
+    default="",
+    type=str,
+    help="subsampling fraction and seed label",
+    )
     return parser.parse_args()
 
 
@@ -180,21 +187,24 @@ def train():
 
     # get estimator, num_hvgs is ignored if not args.hvg
     estim = EstimatorAutoEncoder(
-        data_path=args.data_path, hvg=args.hvg, num_hvgs=num_hvgs
+        data_path=args.data_path, frac_seed_label=args.frac_seed_label, hvg=args.hvg, num_hvgs=num_hvgs
     )
 
     # set up datamodule
     estim.init_datamodule(batch_size=args.batch_size)
 
+    # dist.init_process_group(backend='nccl')
+
     estim.init_trainer(
         trainer_kwargs={
+            "num_nodes": 1,
             "strategy": "ddp",
             "max_epochs": 1000,
             "gradient_clip_val": 1.0,
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
             "accelerator": "gpu",
-            "devices": 4,
+            "devices": 1,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
             "logger": [WandbLogger(project="scSFM", save_dir=CHECKPOINT_PATH, name=args.wandb_job_name, version='version_'+str(args.version))],
