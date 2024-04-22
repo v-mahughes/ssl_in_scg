@@ -204,7 +204,7 @@ def train():
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
             "accelerator": "gpu",
-            "devices": 1,
+            "devices": 2,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
             "logger": [WandbLogger(project="scSFM", save_dir=CHECKPOINT_PATH, name=args.wandb_job_name, version='version_'+str(args.version))],

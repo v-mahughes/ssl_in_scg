@@ -238,13 +238,15 @@ class AdataPretraining(pl.LightningDataModule):
         # self.val_dataset = torch.tensor(np.array(val_data.X), dtype=torch.float32)
         # self.test_dataset = torch.tensor(np.array(test_data.X), dtype=torch.float32)
 
-        self.train_dataset = AnnDataDataset(self.path+'/train/'+frac_seed_label+'/'+frac_seed_label+'_TRAIN.h5ad')
-        self.val_dataset = AnnDataDataset(self.path+'/val/'+frac_seed_label+'/'+frac_seed_label+'_VAL.h5ad')
-        self.test_dataset = AnnDataDataset(self.path+'/test/'+frac_seed_label+'/'+frac_seed_label+'_TEST.h5ad')
+        self.train_dataset = AnnDataDataset(self.path+'/train/'+frac_seed_label+'/'+frac_seed_label+'_TRAIN_PREPROCESSED.h5ad')
+        self.val_dataset = AnnDataDataset(self.path+'/val/'+frac_seed_label+'/'+frac_seed_label+'_VAL_PREPROCESSED.h5ad')
+        self.test_dataset = AnnDataDataset(self.path+'/test/'+frac_seed_label+'/'+frac_seed_label+'_TEST_PREPROCESSED.h5ad')
+
+        print('size train dataset', len(self.train_dataset))
         
     def train_dataloader(self):
         return DataLoader(
-        self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=31
+        self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=31, pin_memory=True
     )
 
     def val_dataloader(self):
@@ -272,6 +274,7 @@ class AnnDataDataset(Dataset):
 
     def __getitem__(self, idx):
         #might have to copy to memory
+        # return torch.tensor(self.adata[idx, :].to_memory().X.toarray(), dtype=torch.float32)
         return torch.tensor(self.adata[idx, :].to_memory().X, dtype=torch.float32)
 
     # def __getitems__(self, indices):
