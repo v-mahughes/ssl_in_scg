@@ -274,8 +274,7 @@ class AnnDataDataset(Dataset):
 
     def __getitem__(self, idx):
         #might have to copy to memory
-        # return torch.tensor(self.adata[idx, :].to_memory().X.toarray(), dtype=torch.float32)
-        return torch.tensor(self.adata[idx, :].to_memory().X, dtype=torch.float32)
+        return torch.tensor(self.adata[idx, :].to_memory().X.toarray(), dtype=torch.float32)
 
     # def __getitems__(self, indices):
     #     return torch.tensor(self.adata[indices, :].to_memory().X, dtype=torch.float32)

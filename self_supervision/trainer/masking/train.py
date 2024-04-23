@@ -110,6 +110,12 @@ def parse_args():
     type=str,
     help="subsampling fraction and seed label",
     )
+    parser.add_argument(
+    "--log_freq",
+    default=100,
+    type=int,
+    help="logging frequency",
+    )
     return parser.parse_args()
 
 
@@ -208,7 +214,7 @@ def train():
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
             "logger": [WandbLogger(project="scSFM", save_dir=CHECKPOINT_PATH, name=args.wandb_job_name, version='version_'+str(args.version))],
-            "log_every_n_steps": 100,
+            "log_every_n_steps": args.log_freq,
             "detect_anomaly": False,
             "enable_progress_bar": True,
             "enable_model_summary": False,
