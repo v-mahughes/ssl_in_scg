@@ -22,7 +22,8 @@ from self_supervision.trainer.masking.mask_utils import (
     read_gmt,
 )
 from self_supervision.estimator.cellnet import EstimatorAutoEncoder
-import torch.distributed as dist
+from lightning.pytorch.callbacks import EarlyStopping
+from distutils.util import strtobool
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -116,6 +117,32 @@ def parse_args():
     type=int,
     help="logging frequency",
     )
+    parser.add_argument(
+    "--min_delta",
+    default=0.0001,
+    type=float,
+    help="min delta for val loss early stopping",
+    )
+    parser.add_argument(
+    "--patience",
+    default=10,
+    type=int,
+    help="number of epochs to wait for val loss to imrpove before early stopping",
+    )
+    parser.add_argument(
+    "--max_epochs",
+    default=50,
+    type=int,
+    help="number of max epochs before stopping training",
+    )
+    parser.add_argument('--early_stopping', type=lambda x:bool(strtobool(x)), nargs='?', 
+                        const=True, default=True, help='If provided, use early stopping')
+    parser.add_argument(
+    "--devices",
+    default=4,
+    type=int,
+    help="number of GPUs",
+    )
     return parser.parse_args()
 
 
@@ -200,26 +227,15 @@ def train():
     estim.init_datamodule(batch_size=args.batch_size)
 
     # dist.init_process_group(backend='nccl')
+    early_stop_callback = EarlyStopping(
+    monitor='val_loss',
+    min_delta=args.min_delta,
+    patience=args.patience,
+    verbose=True,
+    mode='min'
+)
 
-    estim.init_trainer(
-        trainer_kwargs={
-            "num_nodes": 1,
-            "strategy": "ddp",
-            "max_epochs": 1000,
-            "gradient_clip_val": 1.0,
-            "gradient_clip_algorithm": "norm",
-            "default_root_dir": CHECKPOINT_PATH,
-            "accelerator": "gpu",
-            "devices": 2,
-            "num_sanity_val_steps": 0,
-            "check_val_every_n_epoch": 1,
-            "logger": [WandbLogger(project="scSFM", save_dir=CHECKPOINT_PATH, name=args.wandb_job_name, version='version_'+str(args.version))],
-            "log_every_n_steps": args.log_freq,
-            "detect_anomaly": False,
-            "enable_progress_bar": True,
-            "enable_model_summary": False,
-            "enable_checkpointing": True,
-            "callbacks": [
+    callback_list = [
                 TQDMProgressBar(refresh_rate=300),
                 LearningRateMonitor(logging_interval="step"),
                 # Save the model with the best training loss
@@ -239,7 +255,30 @@ def train():
                     save_top_k=1,
                 ),
                 ModelCheckpoint(filename="last_checkpoint", monitor=None),
-            ],
+            ]
+
+    if args.early_stopping:
+        callback_list.append(early_stop_callback)
+
+    estim.init_trainer(
+        trainer_kwargs={
+            "num_nodes": 1,
+            "strategy": "ddp",
+            "max_epochs": args.max_epochs,
+            "gradient_clip_val": 1.0,
+            "gradient_clip_algorithm": "norm",
+            "default_root_dir": CHECKPOINT_PATH,
+            "accelerator": "gpu",
+            "devices": args.devices,
+            "num_sanity_val_steps": 0,
+            "check_val_every_n_epoch": 1,
+            "logger": [WandbLogger(save_dir=CHECKPOINT_PATH)],
+            "log_every_n_steps": args.log_freq,
+            "detect_anomaly": False,
+            "enable_progress_bar": True,
+            "enable_model_summary": False,
+            "enable_checkpointing": True,
+            "callbacks": callback_list,
         }
     )
 
