@@ -227,22 +227,9 @@ class AdataPretraining(pl.LightningDataModule):
         )
         self.dataset_id_filter = dataset_id_filter
 
-        # train_data = ad.read_h5ad(self.path+'/train.h5ad', backed='r')
-        # print('train n obs', train_data.n_obs)
-        # val_data = ad.read_h5ad(self.path+'/val.h5ad', backed='r')
-        # print('val n obs', val_data.n_obs)
-        # test_data = ad.read_h5ad(self.path+'/test.h5ad', backed='r')
-        # print('test n obs', test_data.n_obs)
-
-        # self.train_dataset = torch.tensor(np.array(train_data.X), dtype=torch.float32)
-        # self.val_dataset = torch.tensor(np.array(val_data.X), dtype=torch.float32)
-        # self.test_dataset = torch.tensor(np.array(test_data.X), dtype=torch.float32)
-
         self.train_dataset = AnnDataDataset(self.path+'/train/'+frac_seed_label+'/'+frac_seed_label+'_TRAIN_PREPROCESSED.h5ad')
         self.val_dataset = AnnDataDataset(self.path+'/val/'+frac_seed_label+'/'+frac_seed_label+'_VAL_PREPROCESSED.h5ad')
         self.test_dataset = AnnDataDataset(self.path+'/test/'+frac_seed_label+'/'+frac_seed_label+'_TEST_PREPROCESSED.h5ad')
-
-        print('size train dataset', len(self.train_dataset))
         
     def train_dataloader(self):
         return DataLoader(
@@ -261,11 +248,8 @@ class AdataPretraining(pl.LightningDataModule):
 
     def predict_dataloader(self):
         return DataLoader(
-        self.test_dataset, batch_size=self.batch_size, shuffle=True
+        self.test_dataset, batch_size=self.batch_size, shuffle=False
     )
-
-#Def __getitems__(self, indices):
-    #Return atadat[indices, :]
 
 class AnnDataDataset(Dataset):
     def __init__(self, adata_path):
@@ -273,11 +257,8 @@ class AnnDataDataset(Dataset):
         self.nvars = self.adata.n_vars
 
     def __getitem__(self, idx):
-        #might have to copy to memory
-        return torch.tensor(self.adata[idx, :].to_memory().X.toarray(), dtype=torch.float32)
-
-    # def __getitems__(self, indices):
-    #     return torch.tensor(self.adata[indices, :].to_memory().X, dtype=torch.float32)
+        # return torch.tensor(self.adata[idx, :].to_memory().X.toarray(), dtype=torch.float32)
+        return torch.tensor(self.adata[idx, :].X.toarray(), dtype=torch.float32)
     
     def __len__(self):
         return self.adata.n_obs
