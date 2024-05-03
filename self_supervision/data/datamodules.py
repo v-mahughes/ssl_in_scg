@@ -257,8 +257,8 @@ class AnnDataDataset(Dataset):
         self.nvars = self.adata.n_vars
 
     def __getitem__(self, idx):
-        # return torch.tensor(self.adata[idx, :].to_memory().X.toarray(), dtype=torch.float32)
-        return torch.tensor(self.adata[idx, :].X.toarray(), dtype=torch.float32)
+        return torch.tensor(self.adata[idx, :].to_memory().X.toarray(), dtype=torch.float32)
+        # return torch.tensor(self.adata[idx, :].X.toarray(), dtype=torch.float32)
     
     def __len__(self):
         return self.adata.n_obs
