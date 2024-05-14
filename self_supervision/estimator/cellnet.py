@@ -7,26 +7,24 @@ import numpy as np
 import pandas as pd
 import lightning.pytorch as pl
 import torch
-import anndata as ad
 
-from self_supervision.data.datamodules import MerlinDataModule, AdataPretraining
+from self_supervision.data.datamodules import MerlinDataModule
 from self_supervision.models.lightning_modules.cellnet_autoencoder import (
     MLPAutoEncoder,
     MLPClassifier,
     MLPBYOL,
     MLPBarlowTwins,
-    MLPNegBin
+    MLPNegBin,
 )
 
 
 class EstimatorAutoEncoder:
-    datamodule: AdataPretraining
+    datamodule: MerlinDataModule
     model: pl.LightningModule
     trainer: pl.Trainer
 
-    def __init__(self, data_path: str, frac_seed_label: str, hvg: bool = False, num_hvgs: int = 2000):
+    def __init__(self, data_path: str, hvg: bool = False, num_hvgs: int = 2000):
         self.data_path = data_path
-        self.frac_seed_label = frac_seed_label
         self.hvg = hvg
         self.num_hvgs = num_hvgs
 
@@ -39,23 +37,22 @@ class EstimatorAutoEncoder:
         merlin_dataset_kwargs_train: Dict = None,
         merlin_dataset_kwargs_inference: Dict = None,
     ):
-        self.datamodule = AdataPretraining(self.data_path,
-            frac_seed_label=self.frac_seed_label,
+        self.datamodule = MerlinDataModule(
+            self.data_path,
             columns=["cell_type", "dataset_id"],
             batch_size=batch_size,
             sub_sample_frac=sub_sample_frac,
             dataloader_kwargs_train=dataloader_kwargs_train,
             dataloader_kwargs_inference=dataloader_kwargs_inference,
             dataset_kwargs_train=merlin_dataset_kwargs_train,
-            dataset_kwargs_inference=merlin_dataset_kwargs_inference,)
+            dataset_kwargs_inference=merlin_dataset_kwargs_inference,
+        )
 
     def init_model(self, model_type: str, model_kwargs):
         if model_type == "mlp_ae":
             self.model = MLPAutoEncoder(
                 **{**self.get_fixed_autoencoder_params(), **model_kwargs}
             )
-        elif model_type == "mlp_vae":
-            self.model = VAE(**{**self.get_fixed_autoencoder_params(), **model_kwargs})
         elif model_type == "mlp_negbin":
             self.model = MLPNegBin(
                 **{**self.get_fixed_autoencoder_params(), **model_kwargs}
@@ -98,15 +95,13 @@ class EstimatorAutoEncoder:
         if self.hvg:
             return {
                 "gene_dim": self.num_hvgs,
-                "train_set_size": self.datamodule.train_dataset.size(dim=0),
-                "val_set_size": self.datamodule.val_dataset.size(dim=0),
                 "batch_size": self.datamodule.batch_size,
                 "hvg": self.hvg,
                 "num_hvgs": self.num_hvgs,
             }
         else:
             return {
-                "gene_dim": int(self.datamodule.train_dataset.nvars),
+                "gene_dim": len(pd.read_parquet(join(self.data_path, "var.parquet"))),
                 "batch_size": self.datamodule.batch_size,
                 "hvg": self.hvg,
                 "num_hvgs": self.num_hvgs,
@@ -125,8 +120,6 @@ class EstimatorAutoEncoder:
                 "child_matrix": np.load(
                     join(self.data_path, "cell_type_hierarchy/child_matrix.npy")
                 ),
-                "train_set_size": sum(self.datamodule.train_dataset.partition_lens),
-                "val_set_size": sum(self.datamodule.val_dataset.partition_lens),
                 "batch_size": self.datamodule.batch_size,
                 "hvg": self.hvg,
                 "num_hvgs": self.num_hvgs,
@@ -143,8 +136,6 @@ class EstimatorAutoEncoder:
                 "child_matrix": np.load(
                     join(self.data_path, "cell_type_hierarchy/child_matrix.npy")
                 ),
-                "train_set_size": sum(self.datamodule.train_dataset.partition_lens),
-                "val_set_size": sum(self.datamodule.val_dataset.partition_lens),
                 "batch_size": self.datamodule.batch_size,
                 "hvg": self.hvg,
                 "num_hvgs": self.num_hvgs,
@@ -165,6 +156,7 @@ class EstimatorAutoEncoder:
 
     def train(self, ckpt_path: str = None):
         self._check_is_initialized()
+        print('estim post train device', self.model.device)
         self.trainer.fit(
             self.model,
             train_dataloaders=self.datamodule.train_dataloader(),

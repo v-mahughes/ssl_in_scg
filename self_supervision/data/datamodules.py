@@ -12,8 +12,6 @@ from torch.utils.data import Dataset, DataLoader
 import h5py
 import torch
 import numpy as np
-import scanpy as sc
-import anndata as ad
 
 PARQUET_SCHEMA = {
     "X": float32,
@@ -202,66 +200,6 @@ class AdataDataset(Dataset):
         batch = {"X": self.genes[idx], "perturbations": self.perturbations[idx]}
         return batch
 
-class AdataPretraining(pl.LightningDataModule):
-    def __init__(self,
-        path: str,
-        frac_seed_label: str,
-        columns: List[str],
-        batch_size: int,
-        sub_sample_frac: float = 1.0,
-        dataloader_kwargs_train: Dict = None,
-        dataloader_kwargs_inference: Dict = None,
-        dataset_kwargs_train: Dict = None,
-        dataset_kwargs_inference: Dict = None,
-        dataset_id_filter=None,):
-
-        self.path = path
-        self.batch_size = batch_size
-        self.sub_sample_frac = sub_sample_frac
-
-        self.dataloader_kwargs_train = _set_default_kwargs_dataloader(
-            dataloader_kwargs_train, train=True
-        )
-        self.dataloader_kwargs_inference = _set_default_kwargs_dataloader(
-            dataloader_kwargs_inference, train=False
-        )
-        self.dataset_id_filter = dataset_id_filter
-
-        self.train_dataset = AnnDataDataset(self.path+'/train/'+frac_seed_label+'/'+frac_seed_label+'_TRAIN_PREPROCESSED.h5ad')
-        self.val_dataset = AnnDataDataset(self.path+'/val/'+frac_seed_label+'/'+frac_seed_label+'_VAL_PREPROCESSED.h5ad')
-        self.test_dataset = AnnDataDataset(self.path+'/test/'+frac_seed_label+'/'+frac_seed_label+'_TEST_PREPROCESSED.h5ad')
-        
-    def train_dataloader(self):
-        return DataLoader(
-        self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=31, pin_memory=True
-    )
-
-    def val_dataloader(self):
-        return DataLoader(
-        self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=31
-    )
-
-    def test_dataloader(self):
-        return DataLoader(
-        self.test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=31
-    )
-
-    def predict_dataloader(self):
-        return DataLoader(
-        self.test_dataset, batch_size=self.batch_size, shuffle=False
-    )
-
-class AnnDataDataset(Dataset):
-    def __init__(self, adata_path):
-        self.adata = ad.read_h5ad(adata_path, backed='r')
-        self.nvars = self.adata.n_vars
-
-    def __getitem__(self, idx):
-        return torch.tensor(self.adata[idx, :].to_memory().X.toarray(), dtype=torch.float32)
-        # return torch.tensor(self.adata[idx, :].X.toarray(), dtype=torch.float32)
-    
-    def __len__(self):
-        return self.adata.n_obs
 
 class HDF5Dataset(Dataset):
     """Custom Dataset for loading data from HDF5 files separately."""
