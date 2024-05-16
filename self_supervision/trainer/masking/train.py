@@ -108,7 +108,7 @@ def parse_args():
     )
     parser.add_argument(
     "--log_freq",
-    default=100,
+    default=10,
     type=int,
     help="logging frequency",
     )
@@ -250,7 +250,7 @@ def train():
 
     estim.init_trainer(
         trainer_kwargs={
-            "max_epochs": 1000,
+            "max_epochs": args.max_epochs,
             "gradient_clip_val": 1.0,
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
@@ -259,7 +259,7 @@ def train():
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
             "logger": [WandbLogger(save_dir=CHECKPOINT_PATH)],
-            "log_every_n_steps": 100,
+            "log_every_n_steps": args.log_freq,
             "detect_anomaly": False,
             "enable_progress_bar": True,
             "enable_model_summary": False,
