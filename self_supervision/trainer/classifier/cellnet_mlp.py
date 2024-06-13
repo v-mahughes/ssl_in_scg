@@ -8,7 +8,7 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
     TQDMProgressBar,
 )
-from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from self_supervision.data.checkpoint_utils import (
     load_last_checkpoint,
     checkpoint_exists,
@@ -58,6 +58,35 @@ def parse_args():
         default="/lustre/groups/ml01/workspace/till.richter/",
         type=str,
         help="Path where the lightning checkpoints are stored",
+    )
+    parser.add_argument(
+    "--log_freq",
+    default=10,
+    type=int,
+    help="logging frequency",
+    )
+    parser.add_argument(
+    "--min_delta",
+    default=0.0001,
+    type=float,
+    help="min delta for val loss early stopping",
+    )
+    parser.add_argument(
+    "--patience",
+    default=10,
+    type=int,
+    help="number of epochs to wait for val loss to imrpove before early stopping",
+    )
+    parser.add_argument(
+    "--max_epochs",
+    default=50,
+    type=int,
+    help="number of max epochs before stopping training",
+    )
+    parser.add_argument('--early_stopping', type=lambda x:bool(strtobool(x)), nargs='?', 
+                        const=True, default=True, help='If provided, use early stopping')
+    parser.add_argument(
+        "--checkpoint_interval", default=1, type=int, help="Checkpoint interval"
     )
 
     return parser.parse_args()
@@ -194,9 +223,31 @@ if __name__ == "__main__":
     # set up datamodule
     estim.init_datamodule(batch_size=args.batch_size)
 
+    callback_list = [
+            TQDMProgressBar(refresh_rate=300),
+            LearningRateMonitor(logging_interval="step"),
+            # Save the model with the best training loss
+            ModelCheckpoint(
+                filename="best_checkpoint_train",
+                monitor="train_loss_epoch",
+                mode="min",
+                every_n_epochs=args.checkpoint_interval,
+                save_top_k=1,
+            ),
+            # Save the model with the best validation loss
+            ModelCheckpoint(
+                filename="best_checkpoint_val",
+                monitor="val_loss",
+                mode="min",
+                every_n_epochs=args.checkpoint_interval,
+                save_top_k=1,
+            ),
+            ModelCheckpoint(filename="last_checkpoint", monitor=None),
+        ]
+
     estim.init_trainer(
         trainer_kwargs={
-            "max_epochs": 1000,
+            "max_epochs": args.max_epochs,
             "gradient_clip_val": 1.0,
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
@@ -204,33 +255,13 @@ if __name__ == "__main__":
             "devices": 1,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
-            "logger": [TensorBoardLogger(CHECKPOINT_PATH, name="default")],
-            "log_every_n_steps": 100,
+            "logger": [WandbLogger(save_dir=CHECKPOINT_PATH)],
+            "log_every_n_steps": args.log_freq,
             "detect_anomaly": False,
             "enable_progress_bar": True,
             "enable_model_summary": False,
             "enable_checkpointing": True,
-            "callbacks": [
-                TQDMProgressBar(refresh_rate=50),
-                LearningRateMonitor(logging_interval="step"),
-                # Save the model with the best training loss
-                ModelCheckpoint(
-                    filename="best_checkpoint_train",
-                    monitor="train_loss",
-                    mode="min",
-                    every_n_epochs=1,
-                    save_top_k=1,
-                ),
-                # Save the model with the best validation loss
-                ModelCheckpoint(
-                    filename="best_checkpoint_val",
-                    monitor="val_loss",
-                    mode="min",
-                    every_n_epochs=1,
-                    save_top_k=1,
-                ),
-                ModelCheckpoint(filename="last_checkpoint", monitor=None),
-            ],
+            "callbacks": callback_list,
         }
     )
 

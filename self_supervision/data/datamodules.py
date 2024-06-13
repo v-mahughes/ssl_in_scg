@@ -30,6 +30,23 @@ PARQUET_SCHEMA = {
 }
 
 
+# def _merlin_dataset_factory(path: str, columns: List[str], dataset_kwargs: Dict):
+#     return merlin.io.Dataset(
+#         path,
+#         engine="parquet",
+#         schema=Schema(
+#             [
+#                 ColumnSchema(
+#                     "X",
+#                     dtype=float32,
+#                     is_list=True,
+#                     is_ragged=False,
+#                     properties={"value_count": {"max": 19357}},
+#                 )
+#             ]
+#         ),
+#         **dataset_kwargs,
+#     )
 def _merlin_dataset_factory(path: str, columns: List[str], dataset_kwargs: Dict):
     return merlin.io.Dataset(
         path,
@@ -44,6 +61,7 @@ def _merlin_dataset_factory(path: str, columns: List[str], dataset_kwargs: Dict)
                     properties={"value_count": {"max": 19357}},
                 )
             ]
+            + [ColumnSchema(col, dtype=int64) for col in columns]
         ),
         **dataset_kwargs,
     )

@@ -455,12 +455,16 @@ class BaseClassifier(pl.LightningModule, abc.ABC):
             loss: Training loss.
         """
         if self.supervised_subset is not None:
-            mask = batch["dataset_id"] == self.supervised_subset
+            # mask = batch["dataset_id"] == self.supervised_subset
+            mask = [x in self.supervised_subset for x in batch['dataset_id']]
+
             if not any(mask):
                 return None, None
 
             # Filter the batch based on the mask
             batch = {key: value[mask] for key, value in batch.items()}
+            # print(batch['soma_joinid'])
+
         preds, loss = self._step(batch, training=True)
         self.log("train_loss", loss)
         f1_macro = self.train_metrics["f1_macro"](preds, batch["cell_type"])

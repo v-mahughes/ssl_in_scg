@@ -39,7 +39,7 @@ class EstimatorAutoEncoder:
     ):
         self.datamodule = MerlinDataModule(
             self.data_path,
-            columns=["cell_type", "dataset_id"],
+            columns=["cell_type", "dataset_id", "soma_joinid"],
             batch_size=batch_size,
             sub_sample_frac=sub_sample_frac,
             dataloader_kwargs_train=dataloader_kwargs_train,
