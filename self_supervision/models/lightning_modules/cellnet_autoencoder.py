@@ -232,7 +232,7 @@ class BaseAutoEncoder(pl.LightningModule, abc.ABC):
         Returns:
             tuple: Tuple containing the latent representation and the reconstructed output.
         """
-        x_in = batch
+        x_in = batch["X"]
         x_latent = self.encoder(x_in)
         x_reconst = self.decoder(x_latent)
         return x_latent, x_reconst
@@ -435,9 +435,9 @@ class BaseClassifier(pl.LightningModule, abc.ABC):
         """
         # If x is a tuple, which can happen in some testing due to lightning, then we need to extract the tensor
         if isinstance(x, dict):
-            x = x
+            x = x["X"]
         if isinstance(x, tuple):
-            x = x[0]
+            x = x[0]["X"]
 
         if self.hvg_indices:
             x = x[:, self.hvg_indices]
@@ -676,8 +676,8 @@ class MLPAutoEncoder(BaseAutoEncoder):
             self.hvg_indices = None
         
     def _step(self, batch, training=True):
-        targets = batch
-        inputs = batch
+        targets = batch["X"]
+        inputs = batch["X"]
 
         if self.hvg_indices is not None:
             inputs = inputs[:, self.hvg_indices]
@@ -791,8 +791,8 @@ class MLPAutoEncoder(BaseAutoEncoder):
 
     def predict_embedding(self, batch):
         if self.hvg_indices is not None:
-            batch = batch[:, self.hvg_indices]
-        return self.encoder(batch)
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        return self.encoder(batch["X"])
 
     def forward(self, x_in):
         x_latent = self.encoder(x_in)
@@ -809,9 +809,9 @@ class MLPAutoEncoder(BaseAutoEncoder):
             batch = {key: value[mask] for key, value in batch.items()}
         x_reconst, loss = self._step(batch)
         if self.hvg_indices is not None:
-            batch = batch[:, self.hvg_indices]
+            batch["X"] = batch["X"][:, self.hvg_indices]
         self.log_dict(
-            self.train_metrics(x_reconst, batch), on_epoch=True, on_step=True
+            self.train_metrics(x_reconst, batch["X"]), on_epoch=True, on_step=True
         )
         self.log("train_loss", loss, on_epoch=True, on_step=True)
         if batch_idx % self.gc_freq == 0:
@@ -828,8 +828,8 @@ class MLPAutoEncoder(BaseAutoEncoder):
             batch = {key: value[mask] for key, value in batch.items()}
         x_reconst, loss = self._step(batch, training=False)
         if self.hvg_indices is not None:
-            batch = batch[:, self.hvg_indices]
-        self.log_dict(self.val_metrics(x_reconst, batch))
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        self.log_dict(self.val_metrics(x_reconst, batch["X"]))
         self.log("val_loss", loss)
         if batch_idx % self.gc_freq == 0:
             gc.collect()
@@ -841,8 +841,8 @@ class MLPAutoEncoder(BaseAutoEncoder):
             batch = {key: value[mask] for key, value in batch.items()}
         x_reconst, loss = self._step(batch, training=False)
         if self.hvg_indices is not None:
-            batch = batch[:, self.hvg_indices]
-        metrics = self.test_metrics(x_reconst, batch)
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        metrics = self.test_metrics(x_reconst, batch["X"])
         self.log_dict(metrics)
         self.log("test_loss", loss)
         if batch_idx % self.gc_freq == 0:
@@ -868,22 +868,22 @@ class MLPAutoEncoder(BaseAutoEncoder):
             batch = {key: value[mask] for key, value in batch.items()}
 
             if predict_embedding:
-                return self.encoder(batch).detach()
+                return self.encoder(batch["X"]).detach()
             else:
                 preds_corrected, loss = self._step(batch, training=False)
                 return preds_corrected[mask], batch["cell_type"][mask]
 
         else:
             if predict_embedding:
-                return self.encoder(batch).detach()
+                return self.encoder(batch["X"]).detach()
             else:
                 x_reconst, loss = self._step(batch, training=False)
-                return x_reconst, batch
+                return x_reconst, batch["X"]
 
     def get_input(self, batch):
         if self.hvg_indices is not None:
-            batch = batch[:, self.hvg_indices]
-        return batch
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        return batch["X"]
 
 
 class MLPNegBin(BaseAutoEncoder):
@@ -1137,8 +1137,8 @@ class MLPNegBin(BaseAutoEncoder):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Tuple containing the latent representation and loss.
         """
-        targets = batch
-        inputs = batch
+        targets = batch["X"]
+        inputs = batch["X"]
 
         if self.hvg_indices is not None:
             inputs = inputs[:, self.hvg_indices]
@@ -1404,8 +1404,8 @@ class MLPNegBin(BaseAutoEncoder):
             torch.Tensor: Embedding tensor.
         """
         if self.hvg_indices is not None:
-            batch = batch[:, self.hvg_indices]
-        return self.encoder(batch)
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        return self.encoder(batch["X"])
 
     def training_step(self, batch, batch_idx):
         """
@@ -1463,8 +1463,8 @@ class MLPNegBin(BaseAutoEncoder):
             batch = {key: value[mask] for key, value in batch.items()}
         x_latent, loss, x_reconst = self._step(batch, training=False)
         if self.hvg_indices is not None:
-            batch = batch[:, self.hvg_indices]
-        metrics = self.test_metrics(x_reconst, batch)
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        metrics = self.test_metrics(x_reconst, batch["X"])
         self.log_dict(metrics)
         self.log("test_loss", loss)
         if batch_idx % self.gc_freq == 0:
@@ -1547,7 +1547,7 @@ class MLPClassifier(BaseClassifier):
             torch.Tensor: Corrected predictions for the batch.
             torch.Tensor: Loss value for the batch.
         """
-        logits = self(batch)
+        logits = self(batch["X"])
         with torch.no_grad():
             preds = torch.argmax(logits, dim=1)
             preds_corrected, targets_corrected = self.hierarchy_correct(
@@ -1593,7 +1593,7 @@ class MLPClassifier(BaseClassifier):
             filtered_batch = {key: value[mask] for key, value in batch.items()}
 
             if predict_embedding:
-                return self.encoder(filtered_batch).detach(), filtered_batch[
+                return self.encoder(filtered_batch["X"]).detach(), filtered_batch[
                     "cell_type"
                 ]
             else:
@@ -1602,7 +1602,7 @@ class MLPClassifier(BaseClassifier):
 
         else:
             if predict_embedding:
-                return self.encoder(batch).detach(), filtered_batch["cell_type"]
+                return self.encoder(batch["X"]).detach(), filtered_batch["cell_type"]
             else:
                 preds_corrected, loss = self._step(batch, training=False)
                 return preds_corrected, batch["cell_type"]
@@ -1636,7 +1636,7 @@ class MLPClassifier(BaseClassifier):
         Returns:
             torch.Tensor: Predicted embedding tensor.
         """
-        x = batch
+        x = batch["X"]
         return self.forward_embedding(x)
 
 
@@ -1737,12 +1737,12 @@ class MLPBYOL(BaseAutoEncoder):
     def predict_embedding(self, batch, batch_idx):
         if batch_idx % self.gc_freq == 0:
             gc.collect()
-        return self.encoder(batch)
+        return self.encoder(batch["X"])
 
     def forward(self, batch):
         if self.hvg_indices is not None:
-            batch = batch[:, self.hvg_indices]
-        return self.byol(batch)
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        return self.byol(batch["X"])
 
     def training_step(self, batch, batch_idx):
         loss = self._step(batch)
@@ -1911,12 +1911,12 @@ class MLPBarlowTwins(BaseAutoEncoder):
 
     def _step(self, batch):
         # For Multiomics, batch['X'] has additional dim to squeeze
-        if batch.dim() == 3:
-            batch = batch.squeeze(1)
+        if batch["X"].dim() == 3:
+            batch["X"] = batch["X"].squeeze(1)
         if self.hvg_indices is not None:
-            x_in = batch[:, self.hvg_indices]
+            x_in = batch["X"][:, self.hvg_indices]
         else:
-            x_in = batch
+            x_in = batch["X"]
         # Modify the forward pass to use the Barlow Twins model (from class B)
         loss = self(x_in)
         return loss
@@ -1924,7 +1924,7 @@ class MLPBarlowTwins(BaseAutoEncoder):
     def predict_embedding(self, batch, batch_idx):
         if batch_idx % self.gc_freq == 0:
             gc.collect()
-        return self.encoder(batch)
+        return self.encoder(batch["X"])
 
     def forward(self, batch):
         # Apply two different augmentations to the same image

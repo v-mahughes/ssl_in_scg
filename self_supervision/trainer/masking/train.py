@@ -25,6 +25,7 @@ from self_supervision.estimator.cellnet import EstimatorAutoEncoder
 from lightning.pytorch.callbacks import EarlyStopping
 from distutils.util import strtobool
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--decoder", action="store_true", help="Whether to use decoder")
@@ -88,32 +89,26 @@ def parse_args():
     )
     parser.add_argument(
         "--data_path",
-        default="/lustre/groups/ml01/workspace/till.richter/merlin_cxg_2023_05_15_sf-log1p",
+        default="",
         type=str,
         help="Path to the data stored as parquet files",
     )
     # Old, 10M dataset: '/lustre/scratch/users/till.richter/merlin_cxg_simple_norm_parquet'
     parser.add_argument(
         "--model_path",
-        default="/lustre/groups/ml01/workspace/till.richter/",
+        default="",
         type=str,
         help="Path where the lightning checkpoints are stored",
     )
     parser.add_argument(
-        "--wandb_job_name",
-        default="ssl",
-        type=str,
-        help="Name of job on wandb",
-    )
-    parser.add_argument(
-    "--frac_seed_label",
-    default="",
-    type=str,
-    help="subsampling fraction and seed label",
+    "--subsample_frac",
+    default=1.0,
+    type=float,
+    help="Path where the lightning checkpoints are stored",
     )
     parser.add_argument(
     "--log_freq",
-    default=100,
+    default=10,
     type=int,
     help="logging frequency",
     )
@@ -137,12 +132,6 @@ def parse_args():
     )
     parser.add_argument('--early_stopping', type=lambda x:bool(strtobool(x)), nargs='?', 
                         const=True, default=True, help='If provided, use early stopping')
-    parser.add_argument(
-    "--devices",
-    default=4,
-    type=int,
-    help="number of GPUs",
-    )
     return parser.parse_args()
 
 
@@ -220,13 +209,12 @@ def train():
 
     # get estimator, num_hvgs is ignored if not args.hvg
     estim = EstimatorAutoEncoder(
-        data_path=args.data_path, frac_seed_label=args.frac_seed_label, hvg=args.hvg, num_hvgs=num_hvgs
+        data_path=args.data_path, hvg=args.hvg, num_hvgs=num_hvgs
     )
 
     # set up datamodule
-    estim.init_datamodule(batch_size=args.batch_size)
+    estim.init_datamodule(batch_size=args.batch_size, sub_sample_frac=args.subsample_frac)
 
-    # dist.init_process_group(backend='nccl')
     early_stop_callback = EarlyStopping(
     monitor='val_loss',
     min_delta=args.min_delta,
@@ -262,14 +250,12 @@ def train():
 
     estim.init_trainer(
         trainer_kwargs={
-            "num_nodes": 1,
-            "strategy": "ddp",
             "max_epochs": args.max_epochs,
             "gradient_clip_val": 1.0,
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
             "accelerator": "gpu",
-            "devices": args.devices,
+            "devices": 1,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
             "logger": [WandbLogger(save_dir=CHECKPOINT_PATH)],
@@ -381,6 +367,7 @@ def train():
     elif args.model == "NegBin":
         model_type = "mlp_negbin"
 
+
     estim.init_model(
         model_type=model_type,
         model_kwargs={
@@ -407,6 +394,7 @@ def train():
         estim.train(ckpt_path=ckpt)
     else:
         print("No loading of pre-trained weights, start training from scratch")
+        print('estim device pretrain', estim.model.device)
         estim.train()
 
 

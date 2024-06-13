@@ -2,6 +2,7 @@ import os
 import torch
 
 
+
 def load_last_checkpoint(CHECKPOINT_PATH):
     """
     In CHECKPOINT_PATH, load the 'last_checkpoint.ckpt' file of the highest version
