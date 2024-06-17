@@ -13,20 +13,25 @@ import h5py
 import torch
 import numpy as np
 
+# PARQUET_SCHEMA = {
+#     "X": float32,
+#     "soma_joinid": int64,
+#     "is_primary_data": boolean,
+#     "dataset_id": int64,
+#     "donor_id": int64,
+#     "assay": int64,
+#     "cell_type": int64,
+#     "development_stage": int64,
+#     "disease": int64,
+#     "tissue": int64,
+#     "tissue_general": int64,
+#     "tech_sample": int64,
+#     "idx": int64,
+# }
 PARQUET_SCHEMA = {
     "X": float32,
-    "soma_joinid": int64,
-    "is_primary_data": boolean,
     "dataset_id": int64,
-    "donor_id": int64,
-    "assay": int64,
     "cell_type": int64,
-    "development_stage": int64,
-    "disease": int64,
-    "tissue": int64,
-    "tissue_general": int64,
-    "tech_sample": int64,
-    "idx": int64,
 }
 
 

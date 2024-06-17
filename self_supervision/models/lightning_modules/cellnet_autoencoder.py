@@ -466,7 +466,7 @@ class BaseClassifier(pl.LightningModule, abc.ABC):
             # print(batch['soma_joinid'])
 
         preds, loss = self._step(batch, training=True)
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, on_epoch=True, on_step=True)
         f1_macro = self.train_metrics["f1_macro"](preds, batch["cell_type"])
         f1_micro = self.train_metrics["f1_micro"](preds, batch["cell_type"])
         self.log("train_f1_macro_step", f1_macro)
