@@ -33,6 +33,10 @@ PARQUET_SCHEMA = {
     "dataset_id": int64,
     "cell_type": int64,
 }
+# PARQUET_SCHEMA = {
+#     "X": float32,
+#     "cell_type": int64,
+# }
 
 
 # def _merlin_dataset_factory(path: str, columns: List[str], dataset_kwargs: Dict):
@@ -133,8 +137,9 @@ class MerlinDataModule(pl.LightningDataModule):
         dataset_id_filter=None,
     ):
         super(MerlinDataModule).__init__()
-
+        print(columns)
         for col in columns:
+            print(col)
             assert col in PARQUET_SCHEMA
 
         self.dataloader_kwargs_train = _set_default_kwargs_dataloader(
