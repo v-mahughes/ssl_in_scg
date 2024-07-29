@@ -66,25 +66,11 @@ def parse_args():
     help="logging frequency",
     )
     parser.add_argument(
-    "--min_delta",
-    default=0.0001,
-    type=float,
-    help="min delta for val loss early stopping",
-    )
-    parser.add_argument(
-    "--patience",
-    default=10,
-    type=int,
-    help="number of epochs to wait for val loss to imrpove before early stopping",
-    )
-    parser.add_argument(
     "--max_epochs",
     default=50,
     type=int,
     help="number of max epochs before stopping training",
     )
-    parser.add_argument('--early_stopping', type=lambda x:bool(strtobool(x)), nargs='?', 
-                        const=True, default=True, help='If provided, use early stopping')
     parser.add_argument(
         "--checkpoint_interval", default=1, type=int, help="Checkpoint interval"
     )

@@ -28,15 +28,15 @@ import numpy as np
 #     "tech_sample": int64,
 #     "idx": int64,
 # }
-PARQUET_SCHEMA = {
-    "X": float32,
-    "dataset_id": int64,
-    "cell_type": int64,
-}
 # PARQUET_SCHEMA = {
 #     "X": float32,
+#     "dataset_id": int64,
 #     "cell_type": int64,
 # }
+PARQUET_SCHEMA = {
+    "X": float32,
+    "cell_type": int64,
+}
 
 
 # def _merlin_dataset_factory(path: str, columns: List[str], dataset_kwargs: Dict):
@@ -138,13 +138,14 @@ class MerlinDataModule(pl.LightningDataModule):
     ):
         super(MerlinDataModule).__init__()
         print(columns)
-        for col in columns:
-            print(col)
-            assert col in PARQUET_SCHEMA
+        # for col in columns:
+        #     print(col)
+        #     assert col in PARQUET_SCHEMA
 
         self.dataloader_kwargs_train = _set_default_kwargs_dataloader(
             dataloader_kwargs_train, train=True
         )
+        print('here')
         self.dataloader_kwargs_inference = _set_default_kwargs_dataloader(
             dataloader_kwargs_inference, train=False
         )

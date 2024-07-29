@@ -5,7 +5,7 @@ from lightning.pytorch.callbacks import (
     TQDMProgressBar,
     LearningRateMonitor,
 )
-from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from lightning.pytorch.utilities.model_summary import ModelSummary
 import os
 from pathlib import Path
@@ -154,6 +154,18 @@ def parse_args():
         type=str,
         help="Path to the data stored as parquet files",
     )
+    parser.add_argument(
+    "--log_freq",
+    default=10,
+    type=int,
+    help="logging frequency",
+    )
+    parser.add_argument(
+    "--max_epochs",
+    default=50,
+    type=int,
+    help="number of max epochs before stopping training",
+    )
     # Old, 10M dataset: '/lustre/scratch/users/till.richter/merlin_cxg_simple_norm_parquet'
     parser.add_argument(
         "--model_path",
@@ -167,6 +179,9 @@ def parse_args():
 if __name__ == "__main__":
     # GET GPU AND ARGS
     if torch.cuda.is_available():
+        num_devices = torch.cuda.device_count()
+        device_ids = ",".join(str(i) for i in range(num_devices))
+        os.environ["CUDA_VISIBLE_DEVICES"] = device_ids
         print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
     args = parse_args()
     print(args)
@@ -220,6 +235,8 @@ if __name__ == "__main__":
     elif args.supervised_subset == "PBMC":
         subfolder = subfolder + "_PBMC"
         supervised_subset = 41
+    else:
+        supervised_subset = None
 
     CHECKPOINT_PATH = os.path.join(
         args.model_path,
@@ -231,17 +248,20 @@ if __name__ == "__main__":
     print("Will save model to", CHECKPOINT_PATH)
     Path(CHECKPOINT_PATH).mkdir(parents=True, exist_ok=True)
 
+    print('whats up 0')
     # get estimator
     estim = EstimatorAutoEncoder(
         data_path=args.data_path, hvg=args.hvg, num_hvgs=num_hvgs
     )
 
+    print('whats up 1')
     # set up datamodule
     estim.init_datamodule(batch_size=args.batch_size)
 
+    print('whats up 2')
     estim.init_trainer(
         trainer_kwargs={
-            "max_epochs": 1000,
+            "max_epochs": args.max_epochs,
             "gradient_clip_val": 1.0,
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
@@ -249,8 +269,8 @@ if __name__ == "__main__":
             "devices": 1,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
-            "logger": [TensorBoardLogger(CHECKPOINT_PATH, name="default")],
-            "log_every_n_steps": 100,
+            "logger": [WandbLogger(save_dir=CHECKPOINT_PATH)],
+            "log_every_n_steps": args.log_freq,
             "detect_anomaly": False,
             "enable_progress_bar": True,
             "enable_model_summary": False,
@@ -279,6 +299,7 @@ if __name__ == "__main__":
         }
     )
 
+    print('whats up 3')
     # init model
     if args.model == "MLP":
         model_type = "mlp_ae"
@@ -304,10 +325,11 @@ if __name__ == "__main__":
             "units_encoder": args.hidden_units,
             "units_decoder": args.hidden_units[::-1][1:] if args.decoder else [],
             "supervised_subset": supervised_subset,
-            "vae_type": args.vae_type,
+            # "vae_type": args.vae_type,
         },
     )
 
+    print('whats up 4')
     print(ModelSummary(estim.model))
 
     # load model from SSL pretraining if it's the first time this fine-tuning is done - else load finetuning ckpt
@@ -316,7 +338,7 @@ if __name__ == "__main__":
 
     if not (not args.pretrained_dir or checkpoint_exists(CHECKPOINT_PATH)):
         print("Load pre-trained weights from", args.pretrained_dir)
-        final_dict = update_weights(args.pretrained_dir, estim, args.model)
+        final_dict = update_weights(args.pretrained_dir, estim)
         # update initial state dict with weights from pretraining and fill the rest with initial weights
         estim.model.load_state_dict(final_dict)
         estim.train()
@@ -328,8 +350,11 @@ if __name__ == "__main__":
             )
             # get the best checkpoint from previous training with PyTorch Lightning
             ckpt = load_best_checkpoint(CHECKPOINT_PATH)
+            print('whats up 5')
             print("Load checkpoint from", ckpt)
             estim.train(ckpt_path=ckpt)
+            print('whats up 6')
         else:
             print("No loading of pre-trained weights, start training from scratch")
             estim.train()
+            print('whats up 7')
