@@ -5,7 +5,7 @@ from lightning.pytorch.callbacks import (
     TQDMProgressBar,
     LearningRateMonitor,
 )
-from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 import os
 import pickle
 import numpy as np
@@ -22,6 +22,8 @@ from self_supervision.trainer.masking.mask_utils import (
     read_gmt,
 )
 from self_supervision.estimator.cellnet import EstimatorAutoEncoder
+from lightning.pytorch.callbacks import EarlyStopping
+from distutils.util import strtobool
 
 
 def parse_args():
@@ -97,6 +99,36 @@ def parse_args():
         default="/lustre/groups/ml01/workspace/till.richter/",
         type=str,
         help="Path where the lightning checkpoints are stored",
+    )
+    parser.add_argument(
+    "--max_steps",
+    default=117000,
+    type=int,
+    help="number of max epochs before stopping training",
+    )
+    parser.add_argument(
+    "--log_freq",
+    default=10,
+    type=int,
+    help="logging frequency",
+    )
+    parser.add_argument(
+    "--min_delta",
+    default=0.0001,
+    type=float,
+    help="min delta for val loss early stopping",
+    )
+    parser.add_argument(
+    "--patience",
+    default=30,
+    type=int,
+    help="number of epochs to wait for val loss to imrpove before early stopping",
+    )
+    parser.add_argument(
+    "--early_stopping",
+    default='True',
+    type=str,
+    help="early stopping",
     )
     return parser.parse_args()
 
@@ -181,9 +213,43 @@ def train():
     # set up datamodule
     estim.init_datamodule(batch_size=args.batch_size)
 
+    early_stop_callback = EarlyStopping(
+    monitor='val_loss',
+    min_delta=args.min_delta,
+    patience=args.patience,
+    verbose=True,
+    mode='min'
+    )
+    
+    callback_list = [
+            TQDMProgressBar(refresh_rate=300),
+            LearningRateMonitor(logging_interval="step"),
+            # Save the model with the best training loss
+            ModelCheckpoint(
+                filename="best_checkpoint_train",
+                monitor="train_loss_epoch",
+                mode="min",
+                every_n_epochs=args.checkpoint_interval,
+                save_top_k=1,
+            ),
+            # Save the model with the best validation loss
+            ModelCheckpoint(
+                filename="best_checkpoint_val",
+                monitor="val_loss",
+                mode="min",
+                every_n_epochs=args.checkpoint_interval,
+                save_top_k=1,
+            ),
+            ModelCheckpoint(filename="last_checkpoint", monitor=None),
+        ]
+
+    if args.early_stopping == 'True':
+        print('Using Early Stopping')
+        callback_list.append(early_stop_callback)
+
     estim.init_trainer(
         trainer_kwargs={
-            "max_epochs": 1000,
+            "max_steps": args.max_steps,
             "gradient_clip_val": 1.0,
             "gradient_clip_algorithm": "norm",
             "default_root_dir": CHECKPOINT_PATH,
@@ -191,33 +257,13 @@ def train():
             "devices": 1,
             "num_sanity_val_steps": 0,
             "check_val_every_n_epoch": 1,
-            "logger": [TensorBoardLogger(CHECKPOINT_PATH, name="default")],
-            "log_every_n_steps": 100,
+            "logger":  [WandbLogger(save_dir=CHECKPOINT_PATH)],
+            "log_every_n_steps": args.log_freq,
             "detect_anomaly": False,
             "enable_progress_bar": True,
             "enable_model_summary": False,
             "enable_checkpointing": True,
-            "callbacks": [
-                TQDMProgressBar(refresh_rate=300),
-                LearningRateMonitor(logging_interval="step"),
-                # Save the model with the best training loss
-                ModelCheckpoint(
-                    filename="best_checkpoint_train",
-                    monitor="train_loss_epoch",
-                    mode="min",
-                    every_n_epochs=args.checkpoint_interval,
-                    save_top_k=1,
-                ),
-                # Save the model with the best validation loss
-                ModelCheckpoint(
-                    filename="best_checkpoint_val",
-                    monitor="val_loss",
-                    mode="min",
-                    every_n_epochs=args.checkpoint_interval,
-                    save_top_k=1,
-                ),
-                ModelCheckpoint(filename="last_checkpoint", monitor=None),
-            ],
+            "callbacks": callback_list,
         }
     )
 

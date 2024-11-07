@@ -5,7 +5,7 @@ from lightning.pytorch.callbacks import (
     TQDMProgressBar,
     LearningRateMonitor,
 )
-from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.loggers import TensorBoardLogger, WandbLogger
 from lightning.pytorch.utilities.model_summary import ModelSummary
 import os
 from pathlib import Path
@@ -14,6 +14,7 @@ from self_supervision.data.checkpoint_utils import (
     checkpoint_exists,
 )
 from self_supervision.estimator.cellnet import EstimatorAutoEncoder
+from lightning.pytorch.callbacks import EarlyStopping
 
 
 def update_weights(pretrained_dir, estim):
@@ -161,13 +162,43 @@ def parse_args():
         type=str,
         help="Path where the lightning checkpoints are stored",
     )
+    parser.add_argument(
+    "--max_steps",
+    default=123794,
+    type=int,
+    help="number of max epochs before stopping training",
+    )
+    parser.add_argument(
+    "--log_freq",
+    default=10,
+    type=int,
+    help="logging frequency",
+    )
+    parser.add_argument(
+    "--min_delta",
+    default=0.0001,
+    type=float,
+    help="min delta for val loss early stopping",
+    )
+    parser.add_argument(
+    "--patience",
+    default=30,
+    type=int,
+    help="number of epochs to wait for val loss to imrpove before early stopping",
+    )
+    parser.add_argument(
+    "--early_stopping",
+    default='True',
+    type=str,
+    help="early stopping",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     # GET GPU AND ARGS
-    if torch.cuda.is_available():
-        print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
+    # if torch.cuda.is_available():
+    #     print(f'CUDA_VISIBLE_DEVICES: {os.environ["CUDA_VISIBLE_DEVICES"]}')
     args = parse_args()
     print(args)
 
@@ -220,6 +251,8 @@ if __name__ == "__main__":
     elif args.supervised_subset == "PBMC":
         subfolder = subfolder + "_PBMC"
         supervised_subset = 41
+    else:
+        supervised_subset=None
 
     CHECKPOINT_PATH = os.path.join(
         args.model_path,
@@ -239,23 +272,15 @@ if __name__ == "__main__":
     # set up datamodule
     estim.init_datamodule(batch_size=args.batch_size)
 
-    estim.init_trainer(
-        trainer_kwargs={
-            "max_epochs": 1000,
-            "gradient_clip_val": 1.0,
-            "gradient_clip_algorithm": "norm",
-            "default_root_dir": CHECKPOINT_PATH,
-            "accelerator": "gpu",
-            "devices": 1,
-            "num_sanity_val_steps": 0,
-            "check_val_every_n_epoch": 1,
-            "logger": [TensorBoardLogger(CHECKPOINT_PATH, name="default")],
-            "log_every_n_steps": 100,
-            "detect_anomaly": False,
-            "enable_progress_bar": True,
-            "enable_model_summary": False,
-            "enable_checkpointing": True,
-            "callbacks": [
+    early_stop_callback = EarlyStopping(
+    monitor='val_loss',
+    min_delta=args.min_delta,
+    patience=args.patience,
+    verbose=True,
+    mode='min'
+    )
+
+    callback_list = [
                 TQDMProgressBar(refresh_rate=300),
                 LearningRateMonitor(logging_interval="step"),
                 # Save the model with the best training loss
@@ -275,7 +300,29 @@ if __name__ == "__main__":
                     save_top_k=1,
                 ),
                 ModelCheckpoint(filename="last_checkpoint", monitor=None),
-            ],
+            ]
+
+    if args.early_stopping == 'True':
+        print('Using Early Stopping')
+        callback_list.append(early_stop_callback)
+
+    estim.init_trainer(
+        trainer_kwargs={
+            "max_steps": args.max_steps,
+            "gradient_clip_val": 1.0,
+            "gradient_clip_algorithm": "norm",
+            "default_root_dir": CHECKPOINT_PATH,
+            "accelerator": "gpu",
+            "devices": 1,
+            "num_sanity_val_steps": 0,
+            "check_val_every_n_epoch": 1,
+            "logger": [WandbLogger(save_dir=CHECKPOINT_PATH)],
+            "log_every_n_steps": args.log_freq,
+            "detect_anomaly": False,
+            "enable_progress_bar": True,
+            "enable_model_summary": False,
+            "enable_checkpointing": True,
+            "callbacks": callback_list,
         }
     )
 
@@ -304,7 +351,6 @@ if __name__ == "__main__":
             "units_encoder": args.hidden_units,
             "units_decoder": args.hidden_units[::-1][1:] if args.decoder else [],
             "supervised_subset": supervised_subset,
-            "vae_type": args.vae_type,
         },
     )
 
@@ -316,7 +362,7 @@ if __name__ == "__main__":
 
     if not (not args.pretrained_dir or checkpoint_exists(CHECKPOINT_PATH)):
         print("Load pre-trained weights from", args.pretrained_dir)
-        final_dict = update_weights(args.pretrained_dir, estim, args.model)
+        final_dict = update_weights(args.pretrained_dir, estim)
         # update initial state dict with weights from pretraining and fill the rest with initial weights
         estim.model.load_state_dict(final_dict)
         estim.train()
