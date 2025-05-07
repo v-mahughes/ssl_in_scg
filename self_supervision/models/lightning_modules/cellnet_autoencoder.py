@@ -565,6 +565,377 @@ class BaseClassifier(pl.LightningModule, abc.ABC):
 
         return optimizer_config
 
+class MLPVariationalAutoEncoder(BaseAutoEncoder):
+    def __init__(
+        self,
+        # fixed params
+        gene_dim: int,
+        units_encoder: List[int],
+        units_decoder: List[int],
+        # params from datamodule
+        batch_size: int,
+        hvg: bool = False,
+        num_hvgs: int = 2000,
+        # model specific params
+        supervised_subset: Optional[int] = None,
+        reconstruction_loss: str = "mse",
+        learning_rate: float = 0.005,
+        weight_decay: float = 0.1,
+        dropout: float = 0.1,
+        optimizer: Callable[..., torch.optim.Optimizer] = torch.optim.AdamW,
+        lr_scheduler: Callable = None,
+        lr_scheduler_kwargs: Dict = None,
+        output_activation: Callable[[], torch.nn.Module] = nn.Sigmoid,
+        activation: Callable[[], torch.nn.Module] = nn.SELU,
+        # params for masking
+        masking_rate: Optional[float] = None,
+        masking_strategy: Optional[str] = None,  # 'random', 'gene_program'
+        encoded_gene_program: Optional[Dict] = None,
+    ):
+        # check input
+        assert 0.0 <= dropout <= 1.0
+        assert reconstruction_loss in ["mse", "mae", "continuous_bernoulli", "bce"]
+        if reconstruction_loss in ["continuous_bernoulli", "bce"]:
+            assert output_activation == nn.Sigmoid
+
+        self.batch_size = batch_size
+        self.supervised_subset = supervised_subset
+
+        super(MLPVariationalAutoEncoder, self).__init__(
+            gene_dim=gene_dim,
+            batch_size=batch_size,
+            learning_rate=learning_rate,
+            weight_decay=weight_decay,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            lr_scheduler_kwargs=lr_scheduler_kwargs,
+            supervised_subset=supervised_subset,
+        )
+
+        self.encoder = MLP(
+            in_channels=gene_dim,
+            hidden_channels=units_encoder,
+            activation_layer=activation,
+            inplace=False,
+            dropout=dropout,
+        )
+        # Define decoder network
+        self.decoder = nn.Sequential(
+            MLP(
+                in_channels=units_encoder[-1],
+                hidden_channels=units_decoder + [gene_dim],
+                # norm_layer=_get_norm_layer(batch_norm=batch_norm, layer_norm=layer_norm),
+                activation_layer=activation,
+                inplace=False,
+                dropout=dropout,
+            ),
+            output_activation(),
+        )
+
+        self.mean_head = MLP(
+            in_channels=units_encoder[-1],
+            hidden_channels=[],
+            activation_layer=nn.Identity,
+            inplace=False,
+            dropout=0.0,
+        )
+        self.logvar_head = MLP(
+            in_channels=units_encoder[-1],
+            hidden_channels=[],
+            activation_layer=nn.Identity,
+            inplace=False,
+            dropout=0.0,
+        )
+
+        self.predict_bottleneck = False
+
+        metrics = MetricCollection(
+            {
+                "explained_var_weighted": ExplainedVariance(
+                    multioutput="variance_weighted"
+                ),
+                "explained_var_uniform": ExplainedVariance(
+                    multioutput="uniform_average"
+                ),
+                "mse": MeanSquaredError(),
+            }
+        )
+
+        self.train_metrics = metrics.clone(prefix="train_")
+        self.val_metrics = metrics.clone(prefix="val_")
+        self.test_metrics = metrics.clone(prefix="test_")
+
+        # masking
+        self.masking_rate = masking_rate
+        self.masking_strategy = masking_strategy
+        self.encoded_gene_program = encoded_gene_program
+        self.num_hvgs = num_hvgs
+
+        if hvg:
+            root = os.path.dirname(
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                )
+            )
+            self.hvg_indices = pickle.load(
+                open(
+                    root
+                    + "/self_supervision/data/hvg_"
+                    + str(self.num_hvgs)
+                    + "_indices.pickle",
+                    "rb",
+                )
+            )
+        else:
+            self.hvg_indices = None
+        
+    def reparameterize(self, mean: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mean + eps * std
+
+    def _step(self, batch, training=True):
+        targets = batch["X"]
+        inputs = batch["X"]
+
+        if self.hvg_indices is not None:
+            inputs = inputs[:, self.hvg_indices]
+            targets = targets[:, self.hvg_indices]
+
+        if self.masking_rate and self.masking_strategy == "random":
+            mask = (
+                Bernoulli(probs=1.0 - self.masking_rate)
+                .sample(targets.size())
+                .to(targets.device)
+            )
+            # upscale inputs to compensate for masking and convert to same device
+            masked_inputs = 1.0 / (1.0 - self.masking_rate) * (inputs * mask)
+            x_latent = self.encoder(masked_inputs)
+            z_mean = self.mean_head(x_latent)
+            z_logvar = self.logvar_head(x_latent)
+            z = self.reparameterize(z_mean, z_logvar)
+            x_reconst = self.decoder(z)
+            # calculate masked loss on masked part only
+            inv_mask = torch.abs(torch.ones(mask.size()).to(targets.device) - mask)
+            rec_loss = (
+                inv_mask
+                * self._calc_reconstruction_loss(x_reconst, targets, reduction="none")
+            ).mean()
+            kl_div = -0.5 * torch.mean(1 + z_logvar - z_mean.pow(2) - z_logvar.exp())
+            loss = rec_loss + kl_div
+
+        elif self.masking_rate and self.masking_strategy == "gene_program":
+            with torch.no_grad():
+                # self.encoded gene program is a numpy array of encoded gene programs
+                mask, frac = _mask_gene_programs_numpy(
+                    inputs, self.encoded_gene_program, self.masking_rate
+                )
+                mask = torch.tensor(mask).to(inputs.device)
+                # log the fraction of genes masked
+                self.log("frac_genes_masked", frac)
+                # mask, frac = self.mask_gene_programs(inputs, self.gene_program_dict, self.masking_rate)
+            # upscale inputs to compensate for masking
+            masked_inputs = 1.0 / (1.0 - frac) * (inputs * mask.to(inputs.device))
+            x_latent = self.encoder(masked_inputs)
+            z_mean = self.mean_head(x_latent)
+            z_logvar = self.logvar_head(x_latent)
+            z = self.reparameterize(z_mean, z_logvar)
+            x_reconst = self.decoder(z)
+            # calculate masked loss
+            inv_mask = torch.abs(torch.ones(mask.size()).to(targets.device) - mask)
+            rec_loss = (
+                inv_mask.to(inputs.device)
+                * self._calc_reconstruction_loss(x_reconst, targets, reduction="none")
+            ).mean()
+            kl_div = -0.5 * torch.mean(1 + z_logvar - z_mean.pow(2) - z_logvar.exp())
+            loss = rec_loss + kl_div
+
+        elif self.masking_rate and self.masking_strategy == "single_gene_program":
+            with torch.no_grad():
+                # self.encoded gene program is a numpy array of encoded gene programs
+                input_mask, output_mask = _mask_single_gene_programs(
+                    inputs, self.encoded_gene_program
+                )
+                # log the fraction of genes masked
+                self.log("frac_genes_masked", frac)
+            # upscale inputs to compensate for masking
+            masked_inputs = (
+                1.0
+                / (1.0 - frac)
+                * (inputs * torch.tensor(input_mask).to(inputs.device))
+            )
+            x_latent = self.encoder(masked_inputs)
+            z_mean = self.mean_head(x_latent)
+            z_logvar = self.logvar_head(x_latent)
+            z = self.reparameterize(z_mean, z_logvar)
+            x_reconst = self.decoder(z)
+            # calculate masked loss only on the output_mask part of the reconstruction
+            inv_output_mask = torch.abs(
+                torch.ones(output_mask.size()).to(targets.device) - output_mask
+            )
+            rec_loss = (
+                torch.tensor(inv_output_mask).to(inputs.device)
+                * self._calc_reconstruction_loss(x_reconst, targets, reduction="none")
+            ).mean()
+            kl_div = -0.5 * torch.mean(1 + z_logvar - z_mean.pow(2) - z_logvar.exp())
+            loss = rec_loss + kl_div
+
+        elif self.masking_rate and self.masking_strategy == "gp_to_tf":
+            with torch.no_grad():
+                # self.encoded gene program is a Dict of encoded gene programs and the corresponding tf indices
+                input_mask, output_mask = _only_activate_gene_program_numpy(
+                    inputs, self.encoded_gene_program
+                )
+                # log the fraction of genes masked
+                self.log("frac_genes_masked", frac)
+            # upscale inputs to compensate for masking
+            masked_inputs = (
+                1.0
+                / (1.0 - frac)
+                * (inputs * torch.tensor(input_mask).to(inputs.device))
+            )
+            x_latent = self.encoder(masked_inputs)
+            z_mean = self.mean_head(x_latent)
+            z_logvar = self.logvar_head(x_latent)
+            z = self.reparameterize(z_mean, z_logvar)
+            x_reconst = self.decoder(z)
+            # calculate masked loss only on the output_mask part of the reconstruction
+            inv_output_mask = torch.abs(
+                torch.ones(output_mask.size()).to(targets.device) - output_mask
+            )
+            rec_loss = (
+                torch.tensor(inv_output_mask).to(inputs.device)
+                * self._calc_reconstruction_loss(x_reconst, targets, reduction="none")
+            ).mean()
+            kl_div = -0.5 * torch.mean(1 + z_logvar - z_mean.pow(2) - z_logvar.exp())
+            loss = rec_loss + kl_div
+
+        # raise error if masking rate is not none but masking strategy is not implemented
+        elif self.masking_rate and self.masking_strategy not in [
+            "random",
+            "gene_program",
+        ]:
+            raise ValueError(
+                f"Masking strategy {self.masking_strategy} not implemented."
+            )
+
+        # raise error if masking strategy is not none but masking rate is 0.0
+        elif self.masking_strategy and self.masking_rate == 0.0:
+            raise ValueError(
+                f"Masking rate is 0 ({self.masking_rate}),"
+                f" but masking strategy {self.masking_strategy} is not None."
+            )
+
+        else:
+            x_latent = self.encoder(inputs.to(targets.device))
+            z_mean = self.mean_head(x_latent)
+            z_logvar = self.logvar_head(x_latent)
+            z = self.reparameterize(z_mean, z_logvar)
+            x_reconst = self.decoder(z)
+            rec_loss = self._calc_reconstruction_loss(x_reconst, targets, reduction="mean")
+            kl_div = -0.5 * torch.mean(1 + z_logvar - z_mean.pow(2) - z_logvar.exp())
+            loss = rec_loss + kl_div
+
+        return x_reconst, loss
+
+    def predict_embedding(self, batch):
+        if self.hvg_indices is not None:
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        return self.encoder(batch["X"])
+
+    def forward(self, x_in):
+        x_latent = self.encoder(x_in)
+        z_mean = self.mean_head(x_latent)
+        z_logvar = self.logvar_head(x_latent)
+        z = self.reparameterize(z_mean, z_logvar)
+        x_reconst = self.decoder(z)
+        return x_latent, x_reconst
+
+    def training_step(self, batch, batch_idx):
+        if self.supervised_subset is not None:
+            mask = batch["dataset_id"] == self.supervised_subset
+            if not any(mask):
+                return  # Skip the batch if no items match the condition
+
+            # Filter the batch based on the mask
+            batch = {key: value[mask] for key, value in batch.items()}
+        x_reconst, loss = self._step(batch)
+        if self.hvg_indices is not None:
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        self.log_dict(
+            self.train_metrics(x_reconst, batch["X"]), on_epoch=True, on_step=True
+        )
+        self.log("train_loss", loss, on_epoch=True, on_step=True)
+        if batch_idx % self.gc_freq == 0:
+            gc.collect()
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        if self.supervised_subset is not None:
+            mask = batch["dataset_id"] == self.supervised_subset
+            if not any(mask):
+                return  # Skip the batch if no items match the condition
+            # Filter the batch based on the mask
+            batch = {key: value[mask] for key, value in batch.items()}
+        x_reconst, loss = self._step(batch, training=False)
+        if self.hvg_indices is not None:
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        self.log_dict(self.val_metrics(x_reconst, batch["X"]))
+        self.log("val_loss", loss)
+        if batch_idx % self.gc_freq == 0:
+            gc.collect()
+
+    def test_step(self, batch, batch_idx):
+        if self.supervised_subset is not None:
+            mask = batch["dataset_id"] == self.supervised_subset
+            # Filter the batch based on the mask
+            batch = {key: value[mask] for key, value in batch.items()}
+        x_reconst, loss = self._step(batch, training=False)
+        if self.hvg_indices is not None:
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        metrics = self.test_metrics(x_reconst, batch["X"])
+        self.log_dict(metrics)
+        self.log("test_loss", loss)
+        if batch_idx % self.gc_freq == 0:
+            gc.collect()
+        return metrics
+
+    def predict_cell_types(self, x: torch.Tensor):
+        return F.softmax(self(x)[0], dim=1)
+
+    def predict_step(
+        self, batch, batch_idx, dataloader_idx=None, predict_embedding=False
+    ):
+        if batch_idx % self.gc_freq == 0:
+            gc.collect()
+
+        # Apply dataset_id filtering only if supervised_subset is set
+        if self.supervised_subset is not None:
+            mask = batch["dataset_id"] == self.supervised_subset
+            if not any(mask):
+                return None  # Skip the batch if no items match the condition
+
+            # Filter the batch based on the mask
+            batch = {key: value[mask] for key, value in batch.items()}
+
+            if predict_embedding:
+                return self.encoder(batch["X"]).detach()
+            else:
+                preds_corrected, loss = self._step(batch, training=False)
+                return preds_corrected[mask], batch["cell_type"][mask]
+
+        else:
+            if predict_embedding:
+                return self.encoder(batch["X"]).detach()
+            else:
+                x_reconst, loss = self._step(batch, training=False)
+                return x_reconst, batch["X"]
+
+    def get_input(self, batch):
+        if self.hvg_indices is not None:
+            batch["X"] = batch["X"][:, self.hvg_indices]
+        return batch["X"]
 
 class MLPAutoEncoder(BaseAutoEncoder):
     def __init__(
