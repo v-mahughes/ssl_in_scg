@@ -632,20 +632,8 @@ class MLPVariationalAutoEncoder(BaseAutoEncoder):
             output_activation(),
         )
 
-        self.mean_head = MLP(
-            in_channels=units_encoder[-1],
-            hidden_channels=[],
-            activation_layer=nn.Identity,
-            inplace=False,
-            dropout=0.0,
-        )
-        self.logvar_head = MLP(
-            in_channels=units_encoder[-1],
-            hidden_channels=[],
-            activation_layer=nn.Identity,
-            inplace=False,
-            dropout=0.0,
-        )
+        self.mean_head = torch.nn.Linear(units_encoder[-1], units_encoder[-1], bias=True)
+        self.logvar_head = torch.nn.Linear(units_encoder[-1], units_encoder[-1], bias=True)
 
         self.predict_bottleneck = False
 

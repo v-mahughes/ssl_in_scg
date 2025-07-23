@@ -85,6 +85,9 @@ def parse_args():
         "--missing_tolerance", default=0, type=int, help="Missing tolerance"
     )
     parser.add_argument(
+        "--seed", default=0, type=int, help="seed"
+    )
+    parser.add_argument(
         "--pert", action="store_true", help="Whether to use a random seed"
     )
     parser.add_argument(
@@ -130,6 +133,13 @@ def parse_args():
     type=str,
     help="early stopping",
     )
+
+    parser.add_argument(
+    "--no_train_model",
+    default='False',
+    type=str,
+    help="save random init as model",
+    )
     return parser.parse_args()
 
 
@@ -140,7 +150,9 @@ def train():
     print(args)
 
     # FIX SEED FOR REPRODUCIBILITY
-    torch.manual_seed(0)
+    # torch.manual_seed(0)
+    torch.manual_seed(args.seed)
+    print('RANDOM SEED IS ', args.seed)
 
     # if args.mask_rate is not None but args.masking_strategy is None, args.masking_strategy is set to 'random'
     if args.mask_rate is not None and args.masking_strategy is None:
@@ -244,7 +256,7 @@ def train():
         ]
 
     if args.early_stopping == 'True':
-        print('Using Early Stopping')
+        print('Using Early Stopping!!!')
         callback_list.append(early_stop_callback)
 
     estim.init_trainer(
@@ -266,6 +278,7 @@ def train():
             "callbacks": callback_list,
         }
     )
+
 
     # get gene program
     if args.masking_strategy == "random" or args.masking_strategy is None:
@@ -362,6 +375,7 @@ def train():
     if args.model == "MLP":
         model_type = "mlp_ae"
     elif args.model == "VAE":
+        print('USING VAE')
         model_type = "mlp_vae"
     elif args.model == "NegBin":
         model_type = "mlp_negbin"
@@ -381,6 +395,17 @@ def train():
             "units_decoder": args.hidden_units[::-1][1:] if args.decoder else [],
         },
     )
+
+    
+    if args.no_train_model == "True":
+        print('ZERO PERCENT MODEL')
+        random_init_path = os.path.join(CHECKPOINT_PATH, "last_checkpoint.ckpt")
+        torch.save({
+        'state_dict': estim.model.state_dict(),  # Save the model's state dictionary
+        'hyperparameters': args.__dict__,       # Save hyperparameters for reproducibility
+        }, random_init_path)
+        print(f"Random initialization of the model saved to {random_init_path}")
+        return
 
     # check if there are .ckpt files in the checkpoint directory
     if checkpoint_exists(CHECKPOINT_PATH):

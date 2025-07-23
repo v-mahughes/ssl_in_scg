@@ -71,12 +71,13 @@ class EstimatorAutoEncoder:
                 **{**self.get_fixed_clf_params(), **model_kwargs}
             )
         elif model_type == 'mlp_vae':
+            print('USING MLP VARIATIONAL AUTOENCODER')
             self.model = MLPVariationalAutoEncoder(
                 **{**self.get_fixed_autoencoder_params(), **model_kwargs}
             )
         else:
             raise ValueError(
-                f'model_type has to be in ["mlp_ae, mlp_byol, mlp_clf"]. You supplied: {model_type}'
+                f'model_type has to be in ["mlp_ae, mlp_byol, mlp_clf, mlp_vae"]. You supplied: {model_type}'
             )
 
     def init_trainer(self, trainer_kwargs):
